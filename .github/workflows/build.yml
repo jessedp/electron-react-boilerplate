@@ -1,0 +1,60 @@
+name: Build/release
+
+on: push
+
+jobs:
+  release:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest, windows-latest]
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v2
+
+      - name: Check last commit message for "skip ci" or "ci skip"
+        id: skip
+        uses: atlwendy/retrieve-commit-messages-from-pr@v2
+
+      - name: Set SHOULD_RUN flag
+        run: echo ::set-env name=SHOULD_RUN::${{ steps.skip.outputs.shouldRun }}
+
+      - name: Install Node.js, NPM and Yarn
+        if: env.SHOULD_RUN == 'true'
+        uses: actions/setup-node@v1
+        with:
+          node-version: 12
+
+      - name: Force the yarn install (hopefully)
+        if: success()
+        uses: nick-invision/retry@v1
+        with:
+          timeout_minutes: 10
+          max_attempts: 20
+          command: yarn install
+
+      - name: Build/release Electron app
+        if: success()
+        uses: samuelmeuli/action-electron-builder@v1
+        env:
+          SENTRY_AUTH_TOKEN: ${{secrets.SENTRY_AUTH_TOKEN}}
+          SENTRY_ORG: ${{secrets.SENTRY_ORG}}
+          SENTRY_PROJECT: ${{secrets.SENTRY_PROJECT}}
+        with:
+          max_attempts: 5
+          build_script_name: 'package-ci'
+
+          # GitHub token, automatically provided to the action
+          # (No need to define this secret in the repo settings)
+          github_token: ${{ secrets.github_token }}
+
+          # If the commit is tagged with a version (e.g. "v1.0.0"),
+          # release the app after building
+
+          # only tagged commits
+          # release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+
+          # rebuild into a draft release every build
+          release: true
